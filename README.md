@@ -7,7 +7,6 @@ A pseudo-3D racing game in MATLAB
 <li>Run the constructor of the game</li>
 <li>Enjoy</li>
 </ol>
-<br>
 <h3>How do you drive it?</h3>
 <li>W - Throttle</li>
 <li>A,D - left, right</li>
