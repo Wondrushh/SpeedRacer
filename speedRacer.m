@@ -1,6 +1,6 @@
 classdef speedRacer < handle
   
-  properties (Access = private)
+  properties 
     game;
     gameStatus = 1;
     lapTime = 0;
@@ -25,7 +25,7 @@ classdef speedRacer < handle
     centripetalForceCoef = 0.95;
     curveCoef = 0.10; %increase to make the curve shift quicker
     tick = 0.05;
-    timer;
+    lapTimer;
     endScreen;
     
     %colors
@@ -93,11 +93,14 @@ classdef speedRacer < handle
       this.ax.Position = [0 0 1 1];
       this.ax.XTick = [];
       this.ax.YTick = [];
+      
+      %make the sky blue
+      this.display(:,:,1) = this.lightBlue(1);
+      this.display(:,:,2) = this.lightBlue(2);
+      this.display(:,:,3) = this.lightBlue(3);
+      
       image(this.display);
-
-      this.display(:,:,1) = this.display(:,:,1)+this.lightBlue(1);
-      this.display(:,:,2) = this.display(:,:,2)+this.lightBlue(2);
-      this.display(:,:,3) = this.display(:,:,3)+this.lightBlue(3);
+      
       [this.formulaH, this.formulaW,~] = size(this.formula);
       this.carPos = [this.dispWidth/2-this.formulaW/2+1,this.dispHeight*0.85];
       [this.trackRowsN,~] = size(this.track);
@@ -107,106 +110,20 @@ classdef speedRacer < handle
       switch this.gameStatus
         case 1 %introscreen
           if (this.keyStatus(this.space))
-            this.gameStatus = 2;
-          end
-          for y = 1:this.dispHeight/2
-            for x = 1:this.dispWidth
-              row = this.dispHeight/2 + y;
-              middlePoint = (this.curvature*(this.dispHeight-row)^(2)+this.dispWidth/2)/this.dispWidth;
-              perspective = (y+5)/ (this.dispHeight/2)*0.8;
-              roadWidth = perspective;
-              clipboardWidth = roadWidth*0.15;
-              
-              grassChange = abs(sin(10*(1-perspective)^3+0.02*this.distance));
-              clipChange = abs(sin(30*(1-perspective)^3+0.1*this.distance));
-              roadWidth = roadWidth/2;
-              
-              leftGrass = (middlePoint-roadWidth-clipboardWidth)*this.dispWidth;
-              leftClip = (middlePoint-roadWidth)*this.dispWidth;
-              rightClip = (middlePoint+roadWidth)*this.dispWidth;
-              rightGrass = (middlePoint+roadWidth+clipboardWidth)*this.dispWidth;
-              
-              if x>0 && x<leftGrass
-                if grassChange>0.5
-                  this.display(row,x,1:3) = this.green;
-                else
-                  this.display(row,x,1:3) = this.darkGreen;
-                end
-              end
-              if x>=leftGrass && x<leftClip
-                if clipChange>0.5
-                  this.display(row,x,1:3) = this.red;
-                else
-                  this.display(row,x,1:3) = this.white;
-                end
-              end
-              if x>=leftClip && x<rightClip
-                if this.trackRow == 1
-                  this.display(row,x,1:3) = this.white;
-                else
-                  this.display(row,x,1:3) = this.grey;
-                end
-              end
-              if x>=rightClip && x<rightGrass
-                if clipChange>0.5
-                  this.display(row,x,1:3) = this.red;
-                else
-                  this.display(row,x,1:3) = this.white;
-                end
-              end
-              if x>=rightGrass && x<=this.dispWidth
-                if grassChange>0.5
-                  this.display(row,x,1:3) = this.green;
-                else
-                  this.display(row,x,1:3) = this.darkGreen;
-                end
-              end
-            end
-          end
-          
-          yy = 1;%iteration variables for plotting the formula
-          xx = 1;
-          
-          for y = this.carPos(2):this.carPos(2)+this.formulaH-1
-            for x = this.carPos(1):this.carPos(1)+this.formulaW-1
-              if this.formula(yy,xx,1) ~= 175/255 %175 is the transparent "color" code
-                this.display(y,x,1:3) = this.formula(yy,xx,1:3);%displays the formula pixel by pixel
-              end
-              xx = xx+1;
-            end
-            xx = 1;
-            yy = yy+1;
-          end
-          
-          xx = 1;
-          yy = 1;
-          
-          for y = this.dispHeight*0.15:this.dispHeight*0.15 + size(this.welcomeText,1)-1%iterating through welcome text size
-            for x = this.dispWidth*0.5 - size(this.welcomeText, 2)/2:this.dispWidth*0.5 - size(this.welcomeText, 2)/2 + size(this.welcomeText,2)-1
-              if this.welcomeText(yy,xx,1) ~= 1 %175 is the transparent "color" code
-                this.display(y,x,1:3) = this.welcomeText(yy,xx,1:3);%displays the welcome text
-              end
-              xx = xx+1;
-            end
-            xx = 1;
-            yy = yy+1;
-          end
-          
-          image(this.display);
-          drawnow;
-          
-          if this.gameStatus == 2 %make the sky blue
+            this.gameStatus = 2; %continue to the game when space is pressed
+            %clear sky
             this.display(:,:,1) = this.lightBlue(1);
             this.display(:,:,2) = this.lightBlue(2);
             this.display(:,:,3) = this.lightBlue(3);
+            return
           end
           
-          if ~ishghandle(this.game) || this.keyStatus(this.escape) %this deletes the timer when the window is closed
-            stop(timerfindall);
-            delete(timerfindall);
-            close all
-          end
+          this.drawTrack();
+          this.drawFormula();
+          this.drawWelcome();     
+          image(this.display);
           
+          this.quitGame()
           
         case 2 %game
           
@@ -214,6 +131,7 @@ classdef speedRacer < handle
           if (this.keyStatus(this.right))
             this.carPos(1) = this.carPos(1)+this.steering;
           end
+          
           if (this.keyStatus(this.left))
             this.carPos(1) = this.carPos(1)-this.steering;
           end
@@ -268,106 +186,17 @@ classdef speedRacer < handle
           end
           
           %draw the track on the lower half of the screen
-          for y = 1:this.dispHeight/2
-            for x = 1:this.dispWidth
-              %start from the middle of the screen
-              row = this.dispHeight/2 + y;
-              %setting the middle point of screen
-              middlePoint = (this.curvature*(this.dispHeight-row)^(2)+this.dispWidth/2)/this.dispWidth;
-              perspective = (y+4)/ (this.dispHeight/2)*0.8;
-              
-              %perspective of the screen, the road goes wider to the bottom
-              %of the screen
-              roadWidth = perspective;
-              clipboardWidth = roadWidth*0.15;
-              
-              %these functions make the grass and clipping board change its
-              %colors
-              grassChange = abs(sin(10*(1-perspective)^3+0.02*this.distance));
-              clipChange = abs(sin(30*(1-perspective)^3+0.1*this.distance));
-              roadWidth = roadWidth/2;
-              
-              leftGrass = (middlePoint-roadWidth-clipboardWidth)*this.dispWidth;
-              leftClip = (middlePoint-roadWidth)*this.dispWidth;
-              rightClip = (middlePoint+roadWidth)*this.dispWidth;
-              rightGrass = (middlePoint+roadWidth+clipboardWidth)*this.dispWidth;
-              
-              %displays the screen into the image
-              if x>0 && x<leftGrass
-                if grassChange>0.5
-                  this.display(row,x,1:3) = this.green;
-                else
-                  this.display(row,x,1:3) = this.darkGreen;
-                end
-              end
-              if x>=leftGrass && x<leftClip
-                if clipChange>0.5
-                  this.display(row,x,1:3) = this.red;
-                else
-                  this.display(row,x,1:3) = this.white;
-                end
-              end
-              if x>=leftClip && x<rightClip
-                if this.trackRow == 1
-                  this.display(row,x,1:3) = this.white;
-                else
-                  this.display(row,x,1:3) = this.grey;
-                end
-              end
-              if x>=rightClip && x<rightGrass
-                if clipChange>0.5
-                  this.display(row,x,1:3) = this.red;
-                else
-                  this.display(row,x,1:3) = this.white;
-                end
-              end
-              if x>=rightGrass && x<=this.dispWidth
-                if grassChange>0.5
-                  this.display(row,x,1:3) = this.green;
-                else
-                  this.display(row,x,1:3) = this.darkGreen;
-                end
-              end
-            end
-          end
-          
-          yy = 1;%iteration variables for plotting the formula
-          xx = 1;
+          this.drawTrack()
           %plots the formula
-          for y = this.carPos(2):this.carPos(2)+this.formulaH-1
-            for x = this.carPos(1):this.carPos(1)+this.formulaW-1
-              if this.formula(yy,xx,1) ~= 175/255 %175 is the transparent "color" code
-                this.display(y,x,1:3) = this.formula(yy,xx,1:3);%displays the formula pixel by pixel
-              end
-              xx = xx+1;
-            end
-            xx = 1;
-            yy = yy+1;
-          end
+          this.drawFormula()
           
           %calculate distance
           this.distance = this.distance + this.speed;
           
           %change the track when a certain distance is reached and change
           %lap time
-          if this.distance > this.track(this.trackRow,1)
-            this.distance = this.distance - this.track(this.trackRow,1);
-            this.trackRow = this.trackRow + 1;
-            if this.trackRow > this.trackRowsN
-              this.trackRow = 1;
-              if this.lapTime < this.bestLapTime || this.lapCounter == 0
-                this.bestLapTime = this.lapTime;
-              end
-              this.lastLap = this.lapTime;
-              this.totalTime = this.totalTime + this.lapTime;
-              this.lapTime = 0;
-              this.lapCounter = this.lapCounter + 1;
-              if this.lapCounter > this.maxLaps
-                this.gameStatus = 3;
-                this.lapCounter = this.maxLaps;
-              end
-            end
-          end
+          this.manageTrackAndTime()
+          
           %curve the track according to the difference between curvature of the
           %track and actual curvature
           if this.curvature - this.track(this.trackRow, 2) ~= 0
@@ -375,36 +204,33 @@ classdef speedRacer < handle
           end
           %counts the time
           this.lapTime = this.lapTime + this.tick;
-          delete(this.timer);
           %display the generated image to the figure
           image(this.display);
-          this.timer = text(this.dispWidth*0.05, this.dispHeight*0.1,...
-            sprintf('Current time: %0.2f s\nLap %d/%d\nLast lap: %0.2f\nBest lap: %0.2f', this.lapTime,this.lapCounter,this.maxLaps,this.lastLap,this.bestLapTime),...
-            'FontWeight', 'bold',...
-            'FontName', 'Monospaced',...
-            'Color', [0 0 0]);
           
-          drawnow;
+          delete(this.lapTimer)
+          this.lapTimer = text(this.dispWidth*0.05, this.dispHeight*0.1,...
+        sprintf('Current time: %0.2f s\nLap %d/%d\nLast lap: %0.2f\nBest lap: %0.2f', this.lapTime,this.lapCounter,this.maxLaps,this.lastLap,this.bestLapTime),...
+        'FontWeight', 'bold',...
+        'FontName', 'Monospaced',...
+        'Color', [0 0 0]);
+      
+          this.quitGame();
           
-          if ~ishghandle(this.game) || this.keyStatus(this.escape)
-            stop(timerfindall);
-            delete(timerfindall);
-            close all
-          end
         case 3
           this.endScreen = text(this.dispWidth*0.5, this.dispHeight*0.3,...
             sprintf('END!\n\nYour best lap time: %0.2f\nYour total time: %d minutes,%0.2f secons\nPress ESC to exit', this.bestLapTime, floor(this.totalTime/60),(this.totalTime - floor(this.totalTime/60)*60)),...
             'FontSize', 18,...
             'FontName', 'Monospaced',...
             'HorizontalAlignment', 'center');
-          if this.keyStatus(this.escape)
-            stop(timerfindall);
-            delete(timerfindall);
-            close all
-          end
-          drawnow
+         this.quitGame()
       end
     end
+    
+    
+    
+    
+    
+    
     
     function endFcn(~, ~, ~)
       listOfTimers = timerfindall;
@@ -419,12 +245,130 @@ classdef speedRacer < handle
       key = event.Key;
       this.keyStatus = (strcmp(key, this.keys) | this.keyStatus);
     end
+    
     function KeyRelFcn(this,~,event)
       key = event.Key;
       this.keyStatus = (~strcmp(key, this.keys) & this.keyStatus);
     end
+    
     function QuitFcn(~,src,~)
       delete(src);
+    end
+    
+    function manageTrackAndTime(this)
+      if this.distance > this.track(this.trackRow,1)
+        this.distance = this.distance - this.track(this.trackRow,1);
+        this.trackRow = this.trackRow + 1;
+        if this.trackRow > this.trackRowsN
+          this.trackRow = 1;
+          if this.lapTime < this.bestLapTime || this.lapCounter == 0
+            this.bestLapTime = this.lapTime;
+          end
+          this.lastLap = this.lapTime;
+          this.totalTime = this.totalTime + this.lapTime;
+          this.lapTime = 0;
+          this.lapCounter = this.lapCounter + 1;
+          if this.lapCounter > this.maxLaps
+            this.gameStatus = 3;
+            this.lapCounter = this.maxLaps;
+          end
+        end
+      end
+    end
+    
+    function quitGame(this) %quit the game when esc is pressed or figure is closed
+      if ~ishghandle(this.game) || this.keyStatus(this.escape)
+        stop(timerfindall);
+        delete(timerfindall);
+        close all
+      end
+    end
+    
+    function drawWelcome(this) %draws welcome text
+      xx = 1;
+      yy = 1;
+      for y = this.dispHeight*0.15:this.dispHeight*0.15 + size(this.welcomeText,1)-1%iterating through welcome text size
+        for x = this.dispWidth*0.5 - size(this.welcomeText, 2)/2:this.dispWidth*0.5 - size(this.welcomeText, 2)/2 + size(this.welcomeText,2)-1
+          if this.welcomeText(yy,xx,1) ~= 1
+            this.display(y,x,1:3) = this.welcomeText(yy,xx,1:3);%displays the welcome text
+          end
+          xx = xx+1;
+        end
+        xx = 1;
+        yy = yy+1;
+      end
+    end
+    
+    function drawTrack(this) %draws the track pixel by pixel to the display matrix
+      for y = 1:this.dispHeight/2
+        for x = 1:this.dispWidth
+          row = this.dispHeight/2 + y;
+          middlePoint = (this.curvature*(this.dispHeight-row)^(2)+this.dispWidth/2)/this.dispWidth;
+          perspective = (y+5)/ (this.dispHeight/2)*0.8;
+          roadWidth = perspective;
+          clipboardWidth = roadWidth*0.15;
+          
+          grassChange = abs(sin(10*(1-perspective)^3+0.02*this.distance));
+          clipChange = abs(sin(30*(1-perspective)^3+0.1*this.distance));
+          roadWidth = roadWidth/2;
+          
+          leftGrass = (middlePoint-roadWidth-clipboardWidth)*this.dispWidth;
+          leftClip = (middlePoint-roadWidth)*this.dispWidth;
+          rightClip = (middlePoint+roadWidth)*this.dispWidth;
+          rightGrass = (middlePoint+roadWidth+clipboardWidth)*this.dispWidth;
+          
+          if x>0 && x<leftGrass
+            if grassChange>0.5
+              this.display(row,x,1:3) = this.green;
+            else
+              this.display(row,x,1:3) = this.darkGreen;
+            end
+          end
+          if x>=leftGrass && x<leftClip
+            if clipChange>0.5
+              this.display(row,x,1:3) = this.red;
+            else
+              this.display(row,x,1:3) = this.white;
+            end
+          end
+          if x>=leftClip && x<rightClip
+            if this.trackRow == 1 && this.lapCounter ~= 0
+              this.display(row,x,1:3) = this.white;
+            else
+              this.display(row,x,1:3) = this.grey;
+            end
+          end
+          if x>=rightClip && x<rightGrass
+            if clipChange>0.5
+              this.display(row,x,1:3) = this.red;
+            else
+              this.display(row,x,1:3) = this.white;
+            end
+          end
+          if x>=rightGrass && x<=this.dispWidth
+            if grassChange>0.5
+              this.display(row,x,1:3) = this.green;
+            else
+              this.display(row,x,1:3) = this.darkGreen;
+            end
+          end
+        end
+      end
+    end
+    
+    function drawFormula(this)%draws the formula pixel by pixel on the track
+      xx = 1;
+      yy = 1;
+      for y = this.carPos(2):this.carPos(2)+this.formulaH-1
+        for x = this.carPos(1):this.carPos(1)+this.formulaW-1
+          if this.formula(yy,xx,1) ~= 175/255 %175 is the transparent "color" code
+            this.display(y,x,1:3) = this.formula(yy,xx,1:3);%displays the formula pixel by pixel
+          end
+          xx = xx+1;
+        end
+        xx = 1;
+        yy = yy+1;
+      end
     end
   end
 end
